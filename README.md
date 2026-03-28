@@ -15,12 +15,14 @@ npx skills add kivo360/skills --skill better-auth-ui
 npx skills add kivo360/skills --skill dogfood-complete
 npx skills add kivo360/skills --skill my-stack
 npx skills add kivo360/skills --skill saas-bootstrap
+npx skills add kivo360/skills --skill eval-driven-dev
 ```
 
 ## Skills
 
 | Skill | Description |
 |-------|-------------|
+| **[eval-driven-dev](skills/eval-driven-dev)** | 7-stage workflow: Discover → Explore → Spec → Eval (tests first) → Implement → Verify → Iterate. Enforces test-first development with deterministic, fuzzy, integration, QA, and regression evals. |
 | **[saas-bootstrap](skills/saas-bootstrap)** | Bootstrap a full SaaS stack — detect project, install all skills, scaffold configs, automate credential setup |
 | **[my-stack](skills/my-stack)** | Master router for full SaaS stack — Next.js, Better Auth, Drizzle, Stripe, Resend, Sentry, PostHog |
 | **[better-auth-complete](skills/better-auth-complete)** | Meta skill routing all Better Auth work — auth setup, OAuth, 2FA, orgs, email, testing, security |
