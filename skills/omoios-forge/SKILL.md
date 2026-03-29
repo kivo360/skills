@@ -48,8 +48,10 @@ Based on the status output, pick ONE:
 | Status Output | What To Do |
 |---------------|------------|
 | `features: []` (empty) | Read ROADMAP.md → find the first pending cycle → start Phase 1 (Scope) |
-| Feature in `"specced"` phase | Start Phase 4 (gen evals) then Phase 5 (gen feature + build) |
+| Feature in `"specced"` phase | Start Phase 4 (gen evals) then Phase 5 (build) |
 | Feature in `"building"` phase | Continue Phase 5 (tailor code, run eval loop) |
+| Feature evals all pass | Proceed to Phase 6 (E2E tests) |
+| E2E tests pass | Proceed to Phase 7 (Dogfood) |
 | All features complete | Read ROADMAP.md → find the next pending cycle → start Phase 1 |
 
 ### Step 5: Run the Pipeline
@@ -113,12 +115,49 @@ bun run forge gen feature {feature} --spec specs/{feature}.spec.md
 ```
 
 Then tailor the generated code — make it real:
-1. **Load skill: `feature-builder`** for the build loop
-2. Add Drizzle tables to `packages/database/schema.ts`
-3. Implement real queries in each action file (getSession, org scoping, Zod validation)
-4. After each change: `bun run forge eval {feature}`
-5. When feature evals pass: `bun run forge eval --regression`
-6. **Load skill: `steering-enforcer`** for final compliance check
+1. **Load skill: `feature-builder`** for the build loop (it auto-loads `page-scaffolder`)
+2. Select page pattern (list/detail/dashboard/settings/wizard) based on spec commands
+3. Pull required shadcn components: `bunx --bun shadcn@latest add {components}`
+4. Add Drizzle tables to `packages/database/schema.ts`
+5. Implement real queries in each action file (getSession, org scoping, Zod validation)
+6. Generate page components per pattern (NOT bare stubs)
+7. Register feature in sidebar navigation
+8. After each change: `bun run forge eval {feature}`
+9. When feature evals pass: `bun run forge eval --regression`
+10. **Load skill: `steering-enforcer`** for final compliance check
+
+**Conditional skills** (auto-load based on spec):
+- Mentions email → load `react-email` + `resend`
+- Mentions payments → load `stripe-best-practices`
+- Mentions org roles → load `organization-best-practices`
+- Mentions analytics → load `posthog-instrumentation`
+
+**Gate:** All feature evals pass, regression evals pass (18 pass, 2 skip), `bun run check` passes.
+
+### Phase 6: E2E Tests
+**Load skill: `e2e-scaffolder`**
+
+Generate Playwright tests from the spec:
+1. Create Page Object at `apps/app/e2e/page-objects/{feature}.po.ts`
+2. Create E2E test suite at `apps/app/e2e/{feature}.spec.ts`
+3. Tests per role from permission matrix (owner can X, member cannot Y)
+4. Auth fixtures using better-auth testUtils plugin
+5. Run: `bunx playwright test e2e/{feature}.spec.ts`
+
+**Gate:** All E2E tests pass. Page Object covers CRUD operations.
+
+### Phase 7: Dogfood
+**Load skill: `dogfood-complete`**
+
+Agent explores the feature like a real user:
+1. Navigate to the feature via sidebar
+2. Test all CRUD operations visually
+3. Test as different roles (owner, admin, member)
+4. Capture annotated screenshots of each state
+5. Report any bugs with repro steps
+6. Generate additional Playwright tests from exploration
+
+**Gate:** No P0/P1 bugs found. All screenshots captured. QA report produced.
 
 **Gate:** All feature evals pass, regression evals pass (18 pass, 2 skip), `bun run check` passes.
 
@@ -198,10 +237,20 @@ ROADMAP.md                       # Feature tracking + parking lot
 
 ## Related Skills
 
-These are loaded automatically at the right pipeline phase:
-- `socratic-scoping` — Phase 1 (Scope)
-- `prd-creator` — Phase 2 (PRD)
-- `openspec-writer` — Phase 3 (Spec)
-- `steering-enforcer` — Phase 4-5 (Eval enforcement)
-- `feature-builder` — Phase 5 (Build loop)
-- `query-scaffolder` — Phase 5 (Server Action generation)
+Loaded automatically at the right pipeline phase:
+
+| Phase | Skills | Purpose |
+|-------|--------|---------|
+| 1 Scope | `socratic-scoping` | Narrow feature scope |
+| 2 PRD | `prd-creator`, `organization-best-practices` | Permission matrices, flows |
+| 3 Spec | `openspec-writer`, `drizzle-orm` | Machine-readable spec |
+| 4 Evals | `steering-enforcer` | Generate + run evals |
+| 5 Build | `feature-builder`, `query-scaffolder`, `page-scaffolder`, `shadcn` | Actions, pages, layouts |
+| 6 E2E | `e2e-scaffolder`, `playwright-best-practices`, `better-auth-test-utils` | Page Objects, Playwright tests |
+| 7 Dogfood | `dogfood-complete`, `agent-browser` | Visual QA, bug discovery |
+
+Conditional (auto-loaded based on spec):
+- `react-email` + `resend` — when spec mentions email
+- `stripe-best-practices` — when spec mentions payments
+- `posthog-instrumentation` — when spec mentions analytics
+- `sentry-fix-issues` — when spec mentions error tracking
