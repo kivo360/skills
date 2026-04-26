@@ -377,16 +377,30 @@ def score_skill(
 def detect_gaps(
     skills: dict[str, Skill], project_tokens: set[str], top_per_skill: int = 80
 ) -> list[dict[str, Any]]:
-    """v0 gap detection: find project tokens that no active skill mentions."""
+    """Find project tokens that no active skill mentions.
+
+    Sorts by specificity — compound (hyphenated) terms first, then by
+    length descending. Generic short single-word tokens fall to the back
+    of the list because they're rarely real gaps; multi-word identifiers
+    (e.g. ``asyncpg-to-sqlalchemy-converter``) are.
+    """
     covered: set[str] = set()
     for s in skills.values():
         if s.state != "active":
             continue
         covered |= _tokens(s.description) | {t.lower() for t in s.triggers}
-    uncovered = sorted(project_tokens - covered)[:30]
-    if not uncovered:
+    uncovered = project_tokens - covered
+
+    def specificity(token: str) -> tuple[int, int, int, str]:
+        # Higher tuple = more specific. Sort descending.
+        has_hyphen = 1 if "-" in token else 0
+        parts = len(token.split("-"))
+        return (has_hyphen, parts, len(token), token)
+
+    ranked = sorted(uncovered, key=specificity, reverse=True)[:30]
+    if not ranked:
         return []
-    return [{"uncovered_tokens": uncovered}]
+    return [{"uncovered_tokens": ranked}]
 
 
 def main() -> None:
@@ -399,6 +413,14 @@ def main() -> None:
                     help="how many promote/demote/gap items to show")
     ap.add_argument("--promote-threshold", type=float, default=4.0)
     ap.add_argument("--demote-threshold", type=float, default=0.5)
+    ap.add_argument(
+        "--validate-gaps",
+        type=int,
+        default=0,
+        metavar="N",
+        help="run llm_validate.py on the top N gap tokens to confirm they "
+        "really aren't covered by existing skills (costs ~3s per validation).",
+    )
     ap.add_argument("--skills-index", default=os.environ.get(
         "SKILLS_INDEX", str(Path.home() / ".agents/skills-index.json")
     ))
@@ -502,9 +524,45 @@ def main() -> None:
     if gaps:
         print(f"\n{_bold(_red('GAP'))}  ({len(gaps[0]['uncovered_tokens'])} project tokens uncovered)")
         toks = gaps[0]["uncovered_tokens"][: args.top_n * 2]
-        # Group by simple prefix-ish heuristic so output isn't a wall of words.
         print("  " + ", ".join(toks))
         print(_dim("  consider creating skills for project topics that recur but no skill covers."))
+
+        if args.validate_gaps > 0:
+            print(f"\n{_bold(_red('GAP — LLM-validated'))}  (top {args.validate_gaps} via llm_validate.py)")
+            llm_validate = Path(__file__).parent / "llm_validate.py"
+            for token in toks[: args.validate_gaps]:
+                try:
+                    proc = subprocess.run(
+                        [str(llm_validate), "validate-gap", "--topic", token],
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                    )
+                except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+                    print(f"  {_dim('skip ' + token + ': ' + repr(e))}")
+                    continue
+                if proc.returncode != 0:
+                    print(f"  {_dim('skip ' + token + ': llm exited ' + str(proc.returncode))}")
+                    continue
+                try:
+                    parsed = json.loads(proc.stdout.strip())
+                except json.JSONDecodeError:
+                    print(f"  {_dim('skip ' + token + ': non-JSON')}")
+                    continue
+                is_real = parsed.get("is_real_gap")
+                if is_real is True:
+                    name = parsed.get("suggested_skill_name") or "?"
+                    desc = parsed.get("suggested_description") or ""
+                    print(f"  {_red('!')} {token}  {_dim('→ suggested:')} {_bold(name)}")
+                    if desc:
+                        print(f"     {_dim(desc[:160])}")
+                elif is_real is False:
+                    covered = parsed.get("covered_by") or []
+                    reason = parsed.get("reasoning") or ""
+                    cov = ", ".join(covered) if covered else "(no specific skills listed)"
+                    print(f"  {_dim('· ' + token + ' — not a gap; covered by ' + cov + '. ' + reason[:80])}")
+                else:
+                    print(f"  {_dim('? ' + token + ' — llm verdict null')}")
 
     print()
 
