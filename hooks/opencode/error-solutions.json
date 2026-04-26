@@ -1,0 +1,52 @@
+{
+  "9aaa1cd635225799": {
+    "displayCodes": [
+      "actions/companies"
+    ],
+    "lastFix": "unknown",
+    "successCount": 1,
+    "avgAttempts": 2,
+    "lastSeen": "2026-03-29T11:21:04.403Z"
+  },
+  "37e6b888e436df43": {
+    "displayCodes": [
+      "Set a global default version with one of the following:",
+      "mise ERROR No version is set for shim: ruff",
+      "mise ERROR Run with --verbose or MISE_VERBOSE=1 for more information"
+    ],
+    "lastFix": "`uv tool install ruff`",
+    "successCount": 1,
+    "avgAttempts": 2,
+    "lastSeen": "2026-03-29T15:05:18.416Z"
+  },
+  "aa120188c9cd89ed": {
+    "displayCodes": [
+      "Projects/sandbox-agent-python",
+      "bin/python3"
+    ],
+    "lastFix": "`pkill -f pytest 2>/dev/null; sleep 1`",
+    "successCount": 1,
+    "avgAttempts": 2,
+    "lastSeen": "2026-04-23T21:37:11.912Z"
+  },
+  "9e1eec27a1209765": {
+    "displayCodes": [
+      "======================= 141 passed, 33 skipped in 3.66s ========================",
+      "tests/test_sse_streaming.py::TestFollowProcessLogs::test_follow_process_logs PASSED [ 89%]",
+      "tests/test_sse_streaming.py::TestParseLogSseChunk::test_comment_only PASSED [ 85%]"
+    ],
+    "lastFix": "`cd /Users/kevinhill/Coding/Projects/sandbox-agent-python ...`",
+    "successCount": 1,
+    "avgAttempts": 2,
+    "lastSeen": "2026-04-23T22:40:07.771Z"
+  },
+  "29bba70b68cd8ae1": {
+    "displayCodes": [
+      "E902"
+    ],
+    "lastFix": "`uv run ruff check backend/omoi_os/services/credential_bro...`",
+    "successCount": 1,
+    "avgAttempts": 2,
+    "lastSeen": "2026-04-24T00:36:27.361Z"
+  }
+}

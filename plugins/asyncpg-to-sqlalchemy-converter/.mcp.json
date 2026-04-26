@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "supabase-db": {
+      "command": "python3",
+      "args": [
+        "/Users/kevinhill/.claude/plugins/marketplaces/claude-code-plugins/plugins/plugin-dev/scripts/supabase-mcp-server.py"
+      ],
+      "env": {
+        "PYTHONPATH": "/Users/kevinhill/.claude/plugins/marketplaces/claude-code-plugins/plugins/plugin-dev"
+      }
+    }
+  }
+}

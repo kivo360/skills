@@ -1,72 +1,82 @@
-# Skills
+# Coding Toolbelt
 
-Agent skills for full-stack SaaS development.
+The utility belt for coding agents — skills, hooks, agents, commands, tools, and plugins for Claude Code, OpenCode, and any AI coding agent.
 
-## Install
+## What's Inside
 
-```bash
-# Install all skills
-npx skills add kivo360/skills
-
-# Install a specific skill
-npx skills add kivo360/skills --skill better-auth-complete
-npx skills add kivo360/skills --skill better-auth-test-utils
-npx skills add kivo360/skills --skill better-auth-ui
-npx skills add kivo360/skills --skill dogfood-complete
-npx skills add kivo360/skills --skill my-stack
-npx skills add kivo360/skills --skill saas-bootstrap
-npx skills add kivo360/skills --skill eval-driven-dev
-npx skills add kivo360/skills --skill omoios-forge
+```
+coding-toolbelt/
+├── skills/              11 authored agent skills
+├── hooks/
+│   ├── claude-code/     2 Claude Code hooks (memory trigger, Python loader)
+│   ├── opencode/        8 OpenCode hooks (linter escalation, schema guards)
+│   └── opencode-scripts/ 30 OpenCode script hooks (session, quality, security)
+├── agents/
+│   ├── claude-code/     21 Claude Code agent definitions
+│   └── opencode/        2 OpenCode agent definitions
+├── commands/            63 OpenCode slash commands
+├── tools/               7 TypeScript tools (coverage, lint, test, security)
+├── plugins/
+│   └── asyncpg-to-sqlalchemy-converter/  Database migration plugin
+├── quickhooks/          Full Python hooks library (absorbed from kivo360/quickhooks)
+├── docs/                Session progress, ecosystem maps, analyses
+└── prompts/             Reusable test and sync prompts
 ```
 
 ## Skills
 
 | Skill | Description |
 |-------|-------------|
-| **[eval-driven-dev](skills/eval-driven-dev)** | 7-stage workflow: Discover → Explore → Spec → Eval (tests first) → Implement → Verify → Iterate. Enforces test-first development with deterministic, fuzzy, integration, QA, and regression evals. |
-| **[saas-bootstrap](skills/saas-bootstrap)** | Bootstrap a full SaaS stack — detect project, install all skills, scaffold configs, automate credential setup |
-| **[my-stack](skills/my-stack)** | Master router for full SaaS stack — Next.js, Better Auth, Drizzle, Stripe, Resend, Sentry, PostHog |
-| **[better-auth-complete](skills/better-auth-complete)** | Meta skill routing all Better Auth work — auth setup, OAuth, 2FA, orgs, email, testing, security |
-| **[better-auth-test-utils](skills/better-auth-test-utils)** | Better Auth test helpers — factories, getCookies for Playwright, OTP capture, Vitest integration |
+| **[eval-driven-dev](skills/eval-driven-dev)** | 7-stage workflow: Discover → Explore → Spec → Eval (tests first) → Implement → Verify → Iterate |
+| **[saas-bootstrap](skills/saas-bootstrap)** | Bootstrap a full SaaS stack — detect project, install skills, scaffold configs |
+| **[my-stack](skills/my-stack)** | Master router for full SaaS stack — Next.js, Better Auth, Drizzle, Stripe, Resend |
+| **[better-auth-complete](skills/better-auth-complete)** | Meta skill routing all Better Auth work — auth, OAuth, 2FA, orgs, testing, security |
+| **[better-auth-test-utils](skills/better-auth-test-utils)** | Better Auth test helpers — factories, getCookies, OTP capture, Vitest integration |
 | **[better-auth-ui](skills/better-auth-ui)** | Pre-built shadcn/ui auth components — sign in, sign up, settings, orgs, API keys |
-| **[dogfood-complete](skills/dogfood-complete)** | Unified QA + Playwright test generation using agent-browser — video, annotated screenshots, reports |
-| **[omoios-forge](skills/omoios-forge)** | Agent-driven CLI + 5-phase pipeline (Scope → PRD → Spec → Evals → Build) for omoios-forge SaaS boilerplate |
+| **[dogfood-complete](skills/dogfood-complete)** | Unified QA + Playwright test generation — video, annotated screenshots, reports |
+| **[omoios-forge](skills/omoios-forge)** | Agent-driven 5-phase pipeline for omoios-forge SaaS boilerplate |
+| **[linter-loop-escalation](skills/linter-loop-escalation)** | Detects stuck agents and injects escalating guidance via hooks |
+| **[oh-my-openagent](skills/oh-my-openagent)** | Multi-model orchestration harness config and optimization |
+| **[ai-subscription-tracker](skills/ai-subscription-tracker)** | Track AI provider pricing, costs, and usage |
 
-## Stack Coverage
+## Hooks
 
-These skills cover the full SaaS development lifecycle:
+### Claude Code (`hooks/claude-code/`)
+- `memory-trigger.sh` — Memory system trigger
+- `python-skill-loader.sh` — Python skill loading
 
-- **Auth**: Better Auth + Better Auth UI (sign in, sign up, 2FA, orgs, passkeys)
-- **Testing**: agent-browser exploration, QA reports with video evidence, Playwright test generation
-- **Database**: Drizzle ORM integration with Better Auth
-- **Payments**: Stripe integration patterns
-- **Email**: Resend + React Email templates
-- **Monitoring**: Sentry error tracking, PostHog analytics
-- **UI**: shadcn/ui + Tailwind CSS
-- **Infrastructure**: Turborepo monorepo, Vercel deployment
+### OpenCode (`hooks/opencode/`)
+- `linter-loop-escalation.mjs` — 4-tier escalation when agents get stuck
+- `edit-block-on-escalation.mjs` — Block edits during escalation
+- `schema-edit-guard.mjs` / `schema-write-guard.mjs` — Schema protection
+- `test-hooks.mjs` — Hook testing utility
 
-## Docs & Prompts
+### OpenCode Scripts (`hooks/opencode-scripts/`)
+30 lifecycle and automation hooks — session start/end, pre-bash guards, post-edit formatters, cost tracking, security monitoring, quality gates.
 
-Beyond skills, this repo contains session context and reusable test prompts:
+## Agents
 
-```
-docs/
-├── session-progress.md          — Full build history and decisions
-├── skill-ecosystem-map.md       — Visual hierarchy of all 29 skills
-└── omoios-forge-analysis.md     — Project analysis (custom next-forge fork)
+### Claude Code (`agents/claude-code/`)
+21 domain-specific agents — ad auditing (budget, compliance, creative, Google, Meta, tracking), auth debugging, code review, creative strategy, documentation, visual design, and web research.
 
-prompts/
-├── omoios-forge/                — 7 test prompts for omoios-forge
-│   ├── 01-migration-audit.md
-│   ├── 02-auth-api-tests.md
-│   ├── 03-auth-ui-e2e.md
-│   ├── 04-visual-qa.md
-│   ├── 05-import-rules.md
-│   ├── 06-schema-validation.md
-│   └── 07-full-user-journey.md
-└── general/
-    ├── session-sync-broadcast.md — Paste into other sessions to share context
-    └── session-sync-discovery.md — Paste into other sessions to extract their work
+### OpenCode (`agents/opencode/`)
+- `dogfooder.md` — Exploratory QA agent
+- `playwright-writer.md` — E2E test generation agent
+
+## Commands (`commands/`)
+63 slash commands covering build/fix, code review, language-specific testing (Go, Rust, Kotlin, C++, Python), deployment, security, session management, and workflow orchestration.
+
+## Tools (`tools/`)
+7 TypeScript tools: `check-coverage`, `format-code`, `git-summary`, `lint-check`, `run-tests`, `security-audit`, plus index.
+
+## Install Skills
+
+```bash
+# Install all skills
+npx skills add kivo360/coding-toolbelt
+
+# Install a specific skill
+npx skills add kivo360/coding-toolbelt --skill better-auth-complete
 ```
 
 ## License

@@ -1,0 +1,11 @@
+{
+  "PreToolUse": [{
+    "matcher": "Write|Edit",
+    "hooks": [{
+      "type": "command",
+      "command": "bash /Users/kevinhill/.claude/plugins/marketplaces/claude-code-plugins/plugins/plugin-dev/scripts/validate-sqlalchemy.sh",
+      "timeout": 30,
+      "description": "Validate SQLAlchemy code patterns and syntax"
+    }]
+  }]
+}
