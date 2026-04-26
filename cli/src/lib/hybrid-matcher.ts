@@ -21,7 +21,7 @@
 
 import type { SkillEntry, SkillsIndex, SuggestMatch } from "../types";
 import { findMatches, matchScore, tokenize, detectNegatedTokens } from "./matcher";
-import { applyContextRules } from "./context-rules";
+import { applyContextRules, loadProjectBoosts } from "./context-rules";
 import { FAMILY_ORCHESTRATORS } from "./synonyms";
 import {
   loadEmbeddings,
@@ -137,10 +137,15 @@ export async function findMatchesHybrid(
   const negated = detectNegatedTokens(query);
 
   const validNames = new Set(Object.keys(index.skills));
+  // Phase 2 / Tier 1: project-aware boost from the current repo's
+  // Hindsight bank. Returns empty when the env flag is off or no
+  // cache exists, so the hot path is unchanged in that case.
+  const projectBoosts = loadProjectBoosts(index.skills);
   const { boosts: contextBoosts, reasons: contextReasons } = applyContextRules(
     query,
     validNames,
-    negated
+    negated,
+    projectBoosts
   );
 
   // Build the fused score table directly so context boosts compose

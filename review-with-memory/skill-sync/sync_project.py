@@ -297,28 +297,74 @@ def gather_repo_signals(project: Project) -> dict[str, Any]:
     return {"tokens": tokens}
 
 
+def _project_tags_cache_path(bank_id: str) -> Path:
+    slug = re.sub(r"[^a-zA-Z0-9._-]+", "-", bank_id).strip("-") or "default"
+    return Path.home() / ".cache" / "review-with-memory" / "project-tags" / f"{slug}.json"
+
+
+def _tag_token_weights(bank_id: str) -> dict[str, float]:
+    """Mirror of loadProjectBoosts in cli/src/lib/context-rules.ts. Reads the
+    same cache file so skill-sync's scoring is consistent with what the live
+    suggester applies via the project-boost rule."""
+    path = _project_tags_cache_path(bank_id)
+    if not path.exists():
+        return {}
+    try:
+        cache = json.loads(path.read_text())
+    except Exception:
+        return {}
+    out: dict[str, float] = {}
+    for t in cache.get("top_tags", []):
+        tag = t.get("tag", "")
+        weight = float(t.get("weight", 0))
+        if weight <= 0:
+            continue
+        colon = tag.find(":")
+        value = tag[colon + 1:] if colon >= 0 else tag
+        for tok in re.findall(r"[a-z][a-z0-9_-]{2,}", value.lower()):
+            out[tok] = max(out.get(tok, 0), weight)
+    return out
+
+
 def score_skill(
     skill: Skill,
     project_tokens: set[str],
     project_keyword_anchors: set[str],
+    tag_weights: dict[str, float],
 ) -> Scored:
     desc_tokens = _tokens(skill.description)
     trigger_tokens = {t.lower() for t in skill.triggers}
     reasons: list[str] = []
     score = 0.0
 
-    # Trigger hits are the strongest signal — explicit author intent.
-    trigger_hits = trigger_tokens & project_keyword_anchors
-    if trigger_hits:
-        score += 5 * len(trigger_hits)
-        reasons.append(f"trigger: {sorted(trigger_hits)[:3]}")
+    # 1. Project-boost (mirrors the TS suggester's loadProjectBoosts).
+    # Strongest tag-token weight matched by trigger or name → sqrt-scaled boost.
+    if tag_weights:
+        best_w = 0.0
+        name_tokens = {t for t in re.split(r"[-_]", skill.name.lower()) if len(t) >= 3}
+        for tok in trigger_tokens | name_tokens:
+            w = tag_weights.get(tok, 0.0)
+            if w > best_w:
+                best_w = w
+        if best_w > 0:
+            boost = (best_w ** 0.5) * 16  # cap=16 sqrt-scaled, matches TS
+            score += boost
+            reasons.append(f"project-boost {boost:.1f} (best tag w={best_w:.2f})")
 
+    # 2. Description-token overlap — secondary signal.
     overlap = desc_tokens & project_tokens
     if overlap:
-        score += min(len(overlap), 8)
+        bonus = min(len(overlap), 6)
+        score += bonus
         reasons.append(f"{len(overlap)} desc-token overlap (e.g. {sorted(overlap)[:3]})")
 
-    # Tier bonus only meaningful when there's at least some signal.
+    # 3. Trigger overlap with manifest/repo anchors (separate from project tags).
+    trigger_hits = trigger_tokens & project_keyword_anchors
+    if trigger_hits:
+        score += 3 * len(trigger_hits)
+        reasons.append(f"trigger anchor: {sorted(trigger_hits)[:3]}")
+
+    # 4. Tier bonus only when there's already signal.
     if score > 0:
         bonus = TIER_BONUS.get(skill.tier, 0)
         if bonus:
@@ -379,7 +425,8 @@ def main() -> None:
     # Keyword anchors: stronger lexical hooks (top-level dir names, manifest names).
     keyword_anchors = repo_sig["tokens"] | crg["tokens"]
 
-    scored = [score_skill(s, project_tokens, keyword_anchors) for s in skills.values()]
+    tag_weights = _tag_token_weights(project.bank_id)
+    scored = [score_skill(s, project_tokens, keyword_anchors, tag_weights) for s in skills.values()]
 
     promotes: list[Scored] = sorted(
         [s for s in scored if s.skill.state in ("cold", "staging") and s.score >= args.promote_threshold],

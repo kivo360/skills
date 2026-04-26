@@ -108,7 +108,8 @@ export class ChromaSkillStore {
     const res = await this.collection.query({
       queryEmbeddings: [vector],
       nResults: k,
-      where: where as Record<string, unknown> | undefined,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      where: where as any, // chromadb's Where type is a union that doesn't accept structural records cleanly
     });
 
     const ids = (res.ids?.[0] ?? []) as string[];

@@ -13,9 +13,16 @@
  * matcher folds these into the keyword scores before any embedding
  * work, so most prompts never need Layer 1.
  *
- * Every rule lists the skill names it can boost. Adding a new rule
- * is a one-place change, no other coupling required.
+ * Plus: an optional **project boost** synthesized from the current
+ * Hindsight bank's top tags. Loaded from a JSON cache populated by
+ * review-with-memory/skill-sync/aggregate_project_tags.py. Gated
+ * behind HINDSIGHT_PROJECT_BOOST_ENABLED=1. See
+ * docs/highlight-memory-evaluation.md (Phase 2 / Tier 1).
  */
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join, basename } from "node:path";
+import { execFileSync } from "node:child_process";
 
 export interface ContextBoost {
   /** Skill name → additive boost (typically 4–10 keyword points). */
@@ -294,7 +301,8 @@ export const CONTEXT_RULES: ContextRule[] = [
 export function applyContextRules(
   rawPrompt: string,
   validNames: Set<string>,
-  negated: Set<string> = new Set()
+  negated: Set<string> = new Set(),
+  projectBoosts?: ProjectBoosts
 ): ContextBoost {
   const lower = rawPrompt.toLowerCase();
   const boosts: Record<string, number> = {};
@@ -319,5 +327,211 @@ export function applyContextRules(
       reasons.push(rule.id);
     }
   }
+
+  // Project boost (Phase 2 / Tier 1) — derived from this repo's bank tags.
+  // Negation check: if the user said "not <skill>", the project boost for
+  // that skill is suppressed too. Same fairness as hand-written rules.
+  if (projectBoosts && Object.keys(projectBoosts.boosts).length > 0) {
+    let firedAny = false;
+    for (const [name, score] of Object.entries(projectBoosts.boosts)) {
+      if (!validNames.has(name)) continue;
+      const skillTokens = name.toLowerCase().split(/[-_]/);
+      if (skillTokens.some((t) => negated.has(t))) continue;
+      boosts[name] = (boosts[name] ?? 0) + score;
+      firedAny = true;
+    }
+    if (firedAny) reasons.push(...projectBoosts.reasons);
+  }
+
   return { boosts, reasons };
+}
+
+// ─── Project boost (Phase 2 of Hindsight integration) ─────────────────
+
+export interface ProjectBoosts {
+  /** Skill name → additive points (typically 1–6). */
+  boosts: Record<string, number>;
+  /** Reason strings — surfaced when boosts fire. */
+  reasons: string[];
+  /** Resolved bank id (for debugging). */
+  bank?: string;
+}
+
+interface SkillForBoost {
+  triggers?: string[];
+}
+
+const PROJECT_BOOST_ENV = "HINDSIGHT_PROJECT_BOOST_ENABLED";
+const PROJECT_BOOST_CAP = 16; // top-weight tag (1.0) → 16 points → 0.53 confidence,
+// comfortably above default minConfidence=0.45. With sqrt scaling, weight 0.5 → ~11
+// points (0.37). Strongest hand-written tool boost is 10 (tool:bun, tool:vitest), so
+// project signal can edge above explicit tool mentions only at the very top of the
+// distribution — acceptable, since explicit kw signal usually compounds with the boost.
+
+let _projectBoostsCache: ProjectBoosts | null | undefined = undefined;
+
+function _slug(s: string): string {
+  return s.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-|-$/g, "") || "default";
+}
+
+function _currentRepoName(): string | null {
+  try {
+    const root = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 1000,
+    })
+      .toString()
+      .trim();
+    return basename(root) || null;
+  } catch {
+    return null;
+  }
+}
+
+interface CacheEntry {
+  bank: string;
+  top_tags?: Array<{ tag: string; count: number; weight: number }>;
+}
+
+/**
+ * Lazily load the project-boost map for the current repo.
+ *
+ * Reads ~/.cache/review-with-memory/project-tags/<bank-slug>.json,
+ * intersects its tag-derived tokens with each skill's triggers and
+ * name tokens, and caps the per-skill boost at PROJECT_BOOST_CAP.
+ *
+ * Memoized for the process lifetime — first call is a single fs read,
+ * subsequent calls are O(1).
+ *
+ * Returns an empty ProjectBoosts when:
+ *   - HINDSIGHT_PROJECT_BOOST_ENABLED is not set
+ *   - not in a git repo
+ *   - no cache file exists for this repo's bank
+ */
+export function loadProjectBoosts(
+  skills: Record<string, SkillForBoost>,
+  bankPrefix = "kh"
+): ProjectBoosts {
+  if (_projectBoostsCache !== undefined) {
+    return _projectBoostsCache ?? { boosts: {}, reasons: [] };
+  }
+  if (process.env[PROJECT_BOOST_ENV] !== "1" && process.env[PROJECT_BOOST_ENV] !== "true") {
+    _projectBoostsCache = null;
+    return { boosts: {}, reasons: [] };
+  }
+  const repo = _currentRepoName();
+  if (!repo) {
+    _projectBoostsCache = null;
+    return { boosts: {}, reasons: [] };
+  }
+  const bank = `${bankPrefix}-::${repo}`;
+  const cachePath = join(
+    homedir(),
+    ".cache",
+    "review-with-memory",
+    "project-tags",
+    `${_slug(bank)}.json`
+  );
+  if (!existsSync(cachePath)) {
+    _projectBoostsCache = null;
+    return { boosts: {}, reasons: [] };
+  }
+  let cache: CacheEntry;
+  try {
+    cache = JSON.parse(readFileSync(cachePath, "utf-8"));
+  } catch {
+    _projectBoostsCache = null;
+    return { boosts: {}, reasons: [] };
+  }
+
+  // Build a token→weight map from the tag values (after stripping prefix).
+  const tagTokens = new Map<string, number>();
+  for (const t of cache.top_tags ?? []) {
+    const colonIdx = t.tag.indexOf(":");
+    const value = colonIdx >= 0 ? t.tag.slice(colonIdx + 1) : t.tag;
+    const tokens = value.toLowerCase().match(/[a-z][a-z0-9_-]{2,}/g) ?? [];
+    for (const tok of tokens) {
+      const prev = tagTokens.get(tok) ?? 0;
+      if (t.weight > prev) tagTokens.set(tok, t.weight);
+    }
+  }
+
+  // IDF: how RARE is each token across the catalog? Common tokens like
+  // "cli" or "config" appear in many skill names/triggers — without IDF
+  // weighting they'd dominate over specific tokens like "matcher" or
+  // "synonym," producing false-positive boosts. This was flagged in
+  // the eval (see run-probes-project-aware.ts results before TF-IDF).
+  const skillCount = Object.keys(skills).length;
+  const tokenSkillCount = new Map<string, number>();
+  for (const [name, skill] of Object.entries(skills)) {
+    const allTokens = new Set<string>();
+    for (const tok of name.toLowerCase().split(/[-_]/)) {
+      if (tok.length >= 3) allTokens.add(tok);
+    }
+    for (const trig of skill.triggers ?? []) {
+      allTokens.add(trig.toLowerCase());
+    }
+    for (const tok of allTokens) {
+      tokenSkillCount.set(tok, (tokenSkillCount.get(tok) ?? 0) + 1);
+    }
+  }
+  function idf(token: string): number {
+    const df = tokenSkillCount.get(token) ?? 0;
+    if (df === 0) return 1; // unseen token — neutral
+    // Smooth log-IDF: rare token in 1 skill → ~log(295) ≈ 5.7;
+    //                 common in 100 skills → ~log(2.95) ≈ 1.08;
+    //                 very common in 250   → ~log(1.18) ≈ 0.17
+    return Math.max(0.1, Math.log(skillCount / df));
+  }
+  // Normalize so the highest IDF in the universe maps to 1.0 — keeps the
+  // boost scale stable across catalogs of different sizes.
+  let maxIdf = 0;
+  for (const tok of tokenSkillCount.keys()) {
+    const v = idf(tok);
+    if (v > maxIdf) maxIdf = v;
+  }
+  const normalize = (v: number) => (maxIdf > 0 ? v / maxIdf : v);
+
+  const boosts: Record<string, number> = {};
+  for (const [name, skill] of Object.entries(skills)) {
+    let bestEffective = 0;
+    let bestToken = "";
+    // 1. Trigger overlap (strongest)
+    for (const trigger of skill.triggers ?? []) {
+      const tok = trigger.toLowerCase();
+      const w = tagTokens.get(tok);
+      if (!w) continue;
+      const eff = w * normalize(idf(tok));
+      if (eff > bestEffective) { bestEffective = eff; bestToken = tok; }
+    }
+    // 2. Name-token overlap (skill names are author-curated)
+    for (const tok of name.toLowerCase().split(/[-_]/)) {
+      if (tok.length < 3) continue;
+      const w = tagTokens.get(tok);
+      if (!w) continue;
+      const eff = w * normalize(idf(tok));
+      if (eff > bestEffective) { bestEffective = eff; bestToken = tok; }
+    }
+    if (bestEffective > 0) {
+      const scaled = Math.sqrt(bestEffective) * PROJECT_BOOST_CAP;
+      const points = Math.max(1, Math.min(PROJECT_BOOST_CAP, Math.round(scaled)));
+      boosts[name] = points;
+    }
+    void bestToken;
+  }
+
+  _projectBoostsCache = {
+    boosts,
+    reasons: [`project:${bank}`],
+    bank,
+  };
+  return _projectBoostsCache;
+}
+
+/**
+ * Test/eval helper — reset the memoized cache so a fresh load picks up
+ * a new env var or cache file. Safe no-op in production code.
+ */
+export function _resetProjectBoostsCacheForTest(): void {
+  _projectBoostsCache = undefined;
 }
