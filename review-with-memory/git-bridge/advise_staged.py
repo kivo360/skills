@@ -120,20 +120,20 @@ def main() -> None:
 
     try:
         from hindsight_client import Hindsight
-        client = Hindsight(
+        with Hindsight(
             base_url=os.environ.get("HINDSIGHT_BASE_URL", "http://localhost:8888"),
             timeout=8.0,
-        )
-        t0 = time.monotonic()
-        resp = client.recall(
-            bank_id=bank,
-            query=query,
-            tags=tags,
-            tags_match=args.tags_match,
-            budget=args.budget,
-            max_tokens=args.max_tokens,
-        )
-        elapsed_ms = int((time.monotonic() - t0) * 1000)
+        ) as client:
+            t0 = time.monotonic()
+            resp = client.recall(
+                bank_id=bank,
+                query=query,
+                tags=tags,
+                tags_match=args.tags_match,
+                budget=args.budget,
+                max_tokens=args.max_tokens,
+            )
+            elapsed_ms = int((time.monotonic() - t0) * 1000)
     except Exception as e:
         # Fail open — never block a commit
         print(_dim(f"[hindsight] advisory unavailable: {e!r}"), file=sys.stderr)
