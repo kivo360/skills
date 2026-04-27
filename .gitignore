@@ -25,3 +25,16 @@ Thumbs.db
 
 # uv
 .python-version
+
+# Debug artifacts
+inspect-sysprompt.ts
+session-context-*.json
+system-prompt-*.txt
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Secrets — commit .env.example, never real values
+.env
+.env.local
+!.env.example
